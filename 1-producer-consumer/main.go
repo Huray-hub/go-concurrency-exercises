@@ -10,39 +10,46 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
-func producer(stream Stream) (tweets []*Tweet) {
+func producer(stream Stream, tweetCh chan<- Tweet, wg *sync.WaitGroup) {
 	for {
 		tweet, err := stream.Next()
 		if err == ErrEOF {
-			return tweets
+			close(tweetCh)
+			wg.Done()
+			return
 		}
 
-		tweets = append(tweets, tweet)
+		tweetCh <- *tweet
 	}
 }
 
-func consumer(tweets []*Tweet) {
-	for _, t := range tweets {
+func consumer(tweetCh <-chan Tweet, wg *sync.WaitGroup) {
+	for t := range tweetCh {
 		if t.IsTalkingAboutGo() {
 			fmt.Println(t.Username, "\ttweets about golang")
 		} else {
 			fmt.Println(t.Username, "\tdoes not tweet about golang")
 		}
 	}
+	wg.Done()
 }
 
 func main() {
 	start := time.Now()
 	stream := GetMockStream()
 
+	wg := &sync.WaitGroup{}
+	tweetCh := make(chan Tweet)
+	wg.Add(2)
 	// Producer
-	tweets := producer(stream)
-
+	go producer(stream, tweetCh, wg)
 	// Consumer
-	consumer(tweets)
+	go consumer(tweetCh, wg)
+	wg.Wait()
 
 	fmt.Printf("Process took %s\n", time.Since(start))
 }
